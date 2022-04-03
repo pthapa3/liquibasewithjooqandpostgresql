@@ -1,0 +1,182 @@
+import org.jooq.codegen.GenerationTool
+import org.jooq.meta.jaxb.*
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+
+
+buildscript {
+	repositories {
+		mavenLocal()
+		mavenCentral()
+	}
+	dependencies {
+		classpath "org.jooq:jooq-codegen:3.16.5"
+		classpath "org.postgresql:postgresql:42.2.2"
+		classpath "org.liquibase:liquibase-gradle-plugin:2.1.1"
+		classpath "org.yaml:snakeyaml:1.30"
+		//classpath "com.palantir.gradle.docker:gradle-docker:0.32.0"
+
+	}
+}
+
+
+plugins {
+	id 'org.springframework.boot' version '2.6.4'
+	id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+	id "com.palantir.docker-compose" version "0.32.0"
+	id 'java'
+}
+
+apply plugin: "org.liquibase.gradle"
+
+group = 'com.jooqpostliquibase'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '11'
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-jooq'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.liquibase:liquibase-core'
+	implementation 'org.jooq:jooq:3.16.5'
+	compileOnly 'org.projectlombok:lombok'
+	runtimeOnly 'org.postgresql:postgresql'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	/*
+		The liquibase plugin will need to be able to find Liquibase on the classpath when it runs a task,
+		and Liquibase will need to be able to find database drivers, changelog parsers, etc. in the classpath
+	 */
+	liquibaseRuntime 'org.liquibase:liquibase-core:4.5.0'
+	liquibaseRuntime("org.postgresql:postgresql")
+	/*
+		To write changelogs in Groovy DSL
+		To use the Groovy DSL, simply include the Groovy DSL as a liquibaseRuntime dependency and specify
+		a changeLogFile
+	 */
+	//liquibaseRuntime 'org.liquibase:liquibase-groovy-dsl:3.0.0'
+	/*
+		Some parsers, such as the XML parser and the YAML parser, are part of Liquibase itself, although some parsers
+		require you to add additional dependencies to the liquibase classpath. For example, the YAML parser requires
+		org.yaml:snakeyaml:1.17. Using this plugin with Liquibase 4.4.0+ also requires the info.picocli:picocli:4.6.1
+		library.
+	*/
+	liquibaseRuntime 'info.picocli:picocli:4.6.3'
+	liquibaseRuntime('org.yaml:snakeyaml:1.30')
+
+	// Using the following plugin with Java 9+ and XML based change sets will need to add JAXB th classpath since JAXB
+	// was removed from the core JVM. This can be done by adding the following to your liquibaseRuntime dependencies
+	// liquibaseRuntime group: 'javax.xml.bind', name: 'jaxb-api', version: '2.3.1'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	testLogging {
+		events TestLogEvent.FAILED,
+				TestLogEvent.PASSED,
+		 		TestLogEvent.SKIPPED
+	}
+}
+
+/**
+ * ^^^^^^^^^^^^^^^^^
+ jooq code generation
+ *
+ * ^^^^^^^^^^^^ */
+task generate() {
+	dependsOn(liquibaseUpdate)
+
+	def configuration = new Configuration()
+	.withJdbc(new Jdbc()
+			.withDriver('org.postgresql.Driver')
+			.withUrl('jdbc:postgresql://localhost:7654/probot_db')
+			.withUser('probot')
+			.withPassword('probotpass'))
+	.withGenerator(new Generator()
+			.withDatabase(new Database().withInputSchema('public'))
+			.withGenerate(new Generate()
+					.withPojos(false)
+					.withDaos(false))
+			.withTarget(new Target()
+					.withPackageName('com.jooqpostliquibase.jooqpostliquibasedemo.generated.db')
+					.withDirectory("$project.rootDir/src/main/java")))
+
+	doLast {
+		GenerationTool.generate(configuration)
+	}
+
+
+}
+
+/*
+ jooq_db=# \dt
+                 List of relations
+ Schema |         Name          | Type  |   Owner
+--------+-----------------------+-------+-----------
+ public | databasechangelog     | table | jooq_user
+ public | databasechangeloglock | table | jooq_user
+ public | user                  | table | jooq_user
+(3 rows)
+ */
+liquibase () {
+	activities {
+		main {
+			changeLogFile 'src/main/resources/db/changelog/db.changelog-master.yaml'
+			url 'jdbc:postgresql://localhost:7654/probot_db'
+			username 'probot'
+			password 'probotpass'
+		}
+	}
+}
+
+task waitForLocalDb() {
+	doFirst {
+		def numOfAttempts = 0;
+		while(numOfAttempts != 10) {
+			println "waiting for Postgres to come up ***** Attempt: "+numOfAttempts
+
+			def isConnection = exec{
+				executable 'sh'
+				args "-c", """nc -zv localhost 7654"""
+				ignoreExitValue = true
+			}
+			if(isConnection.exitValue == 0) {
+				 println("Connection to DB successful ***")
+				 break;
+			 }
+			numOfAttempts++
+			if(numOfAttempts == 10) {
+				println("Connection UNSUCCESSFUL... Exiting..")
+			}
+			sleep(5000)
+		}
+		
+		
+	}
+	doLast {
+		println("Waiting for..... DB to fully start ..........")
+		sleep(5000)
+	}
+}
+
+dockerCompose {
+	dockerComposeUp {
+		println("DockerComposeUP **********************")
+		dockerComposeFile "src/main/docker/docker-compose.yml"
+	}
+}
+
+liquibaseUpdate.dependsOn waitForLocalDb
+
+compileJava.dependsOn generate
+
+generate.dependsOn dockerComposeUp
+

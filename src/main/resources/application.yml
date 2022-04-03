@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: jooq-liquibase-postgresql-docker-example
+  liquibase:
+    enabled: true
+    drop-first: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    default-schema: public
+  datasource:
+    url: jdbc:postgresql://localhost:7654/probot_db
+    username: probot
+    password: probotpass

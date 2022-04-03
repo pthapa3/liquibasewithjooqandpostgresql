@@ -1,0 +1,12 @@
+version: '3.1'
+services:
+  postgres:
+    image: postgres:14.2-alpine
+    volumes:
+      - ./init_db.sql:/docker-entrypoint-initdb.d/1-init.sql
+    ports:
+      - "7654:5432"
+    restart: unless-stopped
+    environment:
+      DB_USER: probot
+      POSTGRES_PASSWORD: probotpass
