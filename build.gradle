@@ -121,9 +121,9 @@ task generate() {
                  List of relations
  Schema |         Name          | Type  |   Owner
 --------+-----------------------+-------+-----------
- public | databasechangelog     | table | jooq_user
- public | databasechangeloglock | table | jooq_user
- public | user                  | table | jooq_user
+ public | databasechangelog     | table | probot
+ public | databasechangeloglock | table | probot
+ public | user                  | table | probot
 (3 rows)
  */
 liquibase () {
