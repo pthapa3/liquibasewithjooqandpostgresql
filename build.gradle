@@ -1,6 +1,8 @@
 import org.jooq.codegen.GenerationTool
 import org.jooq.meta.jaxb.*
 import org.gradle.api.tasks.testing.logging.TestLogEvent
+import org.gradle.internal.os.OperatingSystem
+
 
 
 buildscript {
@@ -138,16 +140,42 @@ liquibase () {
 }
 
 task waitForLocalDb() {
+	dependsOn "checkOSSys"
 	doFirst {
 		def numOfAttempts = 0;
+		def isConnection
 		while(numOfAttempts != 10) {
 			println "waiting for Postgres to come up ***** Attempt: "+numOfAttempts
 
-			def isConnection = exec{
-				executable 'sh'
-				args "-c", """nc -zv localhost 7654"""
-				ignoreExitValue = true
+			if(checkOSSys.OSSys.contains("Mac") ||
+					OperatingSystem.current().getName() == OperatingSystem.LINUX.name ||
+					OperatingSystem.current().getName() == OperatingSystem.SOLARIS.name ||
+					OperatingSystem.current().getName() == OperatingSystem.FREE_BSD.name) {
+
+				println("Checking connection to DB for system: "+(String)checkOSSys.OSSys + " *****")
+				isConnection = exec {
+					executable 'sh'
+					args "-c", """nc -zv localhost 7654"""
+					ignoreExitValue = true
+				}
 			}
+
+			else if(checkOSSys.OSSys.contains("Windows") ) {
+				println("Checking connection to DB for system: "+(String)checkOSSys.OSSys + " *****")
+				isConnection = exec {
+					commandLine 'cmd', '/c', 'netstat -na | findstr /c:"7654'
+					ignoreExitValue = true
+				}
+			}
+
+			else {
+				isConnection = exec {
+					executable 'sh'
+					args "-c", """nc -zv localhost 7654"""
+					ignoreExitValue = true
+				}
+			}
+
 			if(isConnection.exitValue == 0) {
 				 println("Connection to DB successful ***")
 				 break;
@@ -172,6 +200,14 @@ dockerCompose {
 		println("DockerComposeUP **********************")
 		dockerComposeFile "src/main/docker/docker-compose.yml"
 	}
+}
+
+task checkOSSys() {
+	String osName = OperatingSystem.current().getName();
+	String osVersion = OperatingSystem.current().getVersion();
+	println "*** $osName $osVersion was detected."
+	ext.OSSys = osName
+
 }
 
 liquibaseUpdate.dependsOn waitForLocalDb
