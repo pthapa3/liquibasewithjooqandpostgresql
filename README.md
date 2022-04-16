@@ -7,6 +7,11 @@ It will start the postgresql in docker container before the build process.
 Liquibase will create DB and update it
 Jooq will generate all the necessary classes from the table
 
-Prequisites: Install Docker gardle(Optional). You can use gradlewrapper
+Prequisites: 
+
+Install Docker 
+
+Gradle(Optional). You can use gradlewrapper
+
 
 Run: ./gradlew -i clean build
